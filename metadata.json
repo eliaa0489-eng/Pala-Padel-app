@@ -1,0 +1,6 @@
+{
+  "name": "PALA · Official Padel Performance",
+  "description": "FIP-Regelwerk, 4-Spieler-Match-Verifizierung und Wearable-Telemetrie für Padel.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
