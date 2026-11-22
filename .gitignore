@@ -11,7 +11,7 @@ dist-ssr/
 .vite/
 coverage/
 
-# Environment & Secrets (NEVER commit real keys or .env files)
+# Environment & Local Configuration
 .env
 .env.*
 !.env.example
@@ -24,7 +24,7 @@ coverage/
 secrets.*
 *credentials*.json
 
-# Internal & Editor Directories
+# Editor & Tooling Directories
 .aistudio/
 .vscode/
 .idea/
@@ -38,7 +38,7 @@ secrets.*
 .DS_Store
 Thumbs.db
 
-# Logs & Debug Output
+# Logs
 logs/
 *.log
 npm-debug.log*

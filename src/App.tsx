@@ -1,3 +1,6 @@
+/**
+ * PALA · Official Padel Scoreboard & Match Logs
+ */
 import React, { useState, useEffect, useCallback } from 'react';
 import { Play, History as HistoryIcon } from 'lucide-react';
 import {

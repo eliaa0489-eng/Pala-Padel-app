@@ -4,7 +4,8 @@ import fs from 'fs';
 import path from 'path';
 import {defineConfig} from 'vite';
 
-const SECURITY_HEADERS = {
+// PALA Vite configuration for local-first PWA builds
+const RESPONSE_HEADERS = {
   'X-Content-Type-Options': 'nosniff',
   'Referrer-Policy': 'no-referrer',
   'Permissions-Policy':
@@ -13,10 +14,8 @@ const SECURITY_HEADERS = {
 
 export default defineConfig(() => {
   return {
-    // Prevent accidental exposure of generic VITE_* variables unless explicitly prefixed VITE_PUBLIC_
     envPrefix: 'VITE_PUBLIC_',
     build: {
-      // Disable production source maps to avoid leaking internal file paths in public deployments
       sourcemap: false,
     },
     plugins: [
@@ -47,7 +46,7 @@ export default defineConfig(() => {
       },
     },
     server: {
-      headers: SECURITY_HEADERS,
+      headers: RESPONSE_HEADERS,
       // HMR is disabled in AI Studio via DISABLE_HMR env var.
       // Do not modify—file watching is disabled to prevent flickering during agent edits.
       hmr: process.env.DISABLE_HMR !== 'true',
@@ -55,7 +54,7 @@ export default defineConfig(() => {
       watch: process.env.DISABLE_HMR === 'true' ? null : {},
     },
     preview: {
-      headers: SECURITY_HEADERS,
+      headers: RESPONSE_HEADERS,
     },
   };
 });

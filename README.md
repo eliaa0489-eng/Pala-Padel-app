@@ -90,16 +90,13 @@ pala/
 │   │   └── useWakeLock.ts       # Screen Wake Lock hook with visibilitychange recovery
 │   ├── components/
 │   │   ├── PalaLogo.tsx         # Bespoke geometric SVG wordmark
-│   │   ├── MiniCourtBlueprint.tsx # Interactive 2v2 / 1v1 court vector diagram
-│   │   ├── MatchSetupView.tsx   # Minimal 1-tap setup & resume banner
-│   │   ├── LiveScoreboard.tsx   # Fullscreen Portrait/Landscape dark court display
-│   │   ├── MatchCollectorCard.tsx # Post-match summary card & WhatsApp copy action
-│   │   └── MatchHistoryView.tsx # Saved match logs, live KPIs & detail sheet
+│   │   ├── SetupView.tsx        # Minimal 1-tap setup, mini-court blueprint & resume banner
+│   │   ├── LiveScoreboardView.tsx # Fullscreen Portrait/Landscape court display & Match Card
+│   │   └── HistoryView.tsx      # Saved match logs, live KPIs & detail sheet
 │   ├── App.tsx                  # Root state, navigation & view orchestration
 │   ├── main.tsx                 # Application entry point
 │   └── index.css                # Base tokens, tabular-nums, spring transitions
 ├── package.json
-├── tailwind.config.ts
 ├── tsconfig.json
 └── vite.config.ts
 ```
@@ -116,7 +113,7 @@ pala/
 
 ```bash
 # 1. Clone the repository
-git clone [https://github.com/](https://github.com/)<your-username>/pala.git
+git clone https://github.com/eliaa0489-eng/pala.git
 cd pala
 
 # 2. Install dependencies
