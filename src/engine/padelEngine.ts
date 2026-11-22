@@ -3,6 +3,9 @@ export type DeuceRule = 'golden_point' | 'advantage';
 export type MatchFormat = 'best_of_3' | 'single_set';
 export type TeamSide = 'A' | 'B';
 
+export const MAX_TEAM_NAME_LENGTH = 26;
+export const MAX_UNDO_STACK_SIZE = 400;
+
 export interface SetRecord {
   gamesA: number;
   gamesB: number;
@@ -52,6 +55,36 @@ export type HighStakesIndicator =
   | { type: 'TIE_BREAK'; label: string }
   | null;
 
+/**
+ * Strips control characters and enforces strict length bounds on player/team names
+ */
+export function sanitizeTeamName(raw: unknown, fallback = ''): string {
+  if (typeof raw !== 'string') return fallback;
+  const cleaned = raw
+    .replace(/[\u0000-\u001F\u007F-\u009F]/g, '')
+    .slice(0, MAX_TEAM_NAME_LENGTH);
+  return cleaned || fallback;
+}
+
+function generateSecureMatchId(): string {
+  try {
+    if (
+      typeof crypto !== 'undefined' &&
+      typeof crypto.getRandomValues === 'function'
+    ) {
+      const bytes = new Uint8Array(6);
+      crypto.getRandomValues(bytes);
+      const hex = Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join(
+        ''
+      );
+      return `match_${Date.now()}_${hex}`;
+    }
+  } catch {
+    // Fallback if Web Crypto is unavailable
+  }
+  return `match_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
+}
+
 export function createInitialMatchState(params: {
   mode: PadelMode;
   rule: DeuceRule;
@@ -60,17 +93,17 @@ export function createInitialMatchState(params: {
   teamBName: string;
   initialServer?: TeamSide;
 }): PadelMatchState {
-  const server = params.initialServer ?? 'A';
-  const cleanTeamA =
-    params.teamAName.trim() || (params.mode === '2v2' ? 'Team A' : 'Spieler 1');
-  const cleanTeamB =
-    params.teamBName.trim() || (params.mode === '2v2' ? 'Team B' : 'Spieler 2');
+  const server = params.initialServer === 'B' ? 'B' : 'A';
+  const defaultA = params.mode === '2v2' ? 'Team A' : 'Spieler 1';
+  const defaultB = params.mode === '2v2' ? 'Team B' : 'Spieler 2';
+  const cleanTeamA = sanitizeTeamName(params.teamAName.trim(), defaultA);
+  const cleanTeamB = sanitizeTeamName(params.teamBName.trim(), defaultB);
 
   return {
-    matchId: `match_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
-    mode: params.mode,
-    rule: params.rule,
-    format: params.format,
+    matchId: generateSecureMatchId(),
+    mode: params.mode === '1v1' ? '1v1' : '2v2',
+    rule: params.rule === 'advantage' ? 'advantage' : 'golden_point',
+    format: params.format === 'single_set' ? 'single_set' : 'best_of_3',
     teamAName: cleanTeamA,
     teamBName: cleanTeamB,
     startedAt: Date.now(),
@@ -106,6 +139,17 @@ function extractCoreSnapshot(state: PadelMatchState): PadelCoreSnapshot {
     winner: state.winner,
     completedAt: state.completedAt,
   };
+}
+
+function appendUndoSnapshot(
+  stack: PadelCoreSnapshot[],
+  snapshot: PadelCoreSnapshot
+): PadelCoreSnapshot[] {
+  const next = [...stack, snapshot];
+  if (next.length > MAX_UNDO_STACK_SIZE) {
+    return next.slice(next.length - MAX_UNDO_STACK_SIZE);
+  }
+  return next;
 }
 
 function oppositeTeam(team: TeamSide): TeamSide {
@@ -254,7 +298,7 @@ export function padelMatchReducer(
       if (state.status !== 'active') return state;
       return {
         ...state,
-        elapsedSeconds: action.elapsedSeconds,
+        elapsedSeconds: Math.max(0, Math.floor(action.elapsedSeconds)),
       };
     }
 
@@ -297,7 +341,7 @@ export function padelMatchReducer(
         status: 'completed',
         winner,
         completedAt: Date.now(),
-        undoStack: [...state.undoStack, snapshot],
+        undoStack: appendUndoSnapshot(state.undoStack, snapshot),
       };
     }
 
@@ -462,7 +506,7 @@ export function padelMatchReducer(
         status,
         winner,
         completedAt,
-        undoStack: [...state.undoStack, snapshot],
+        undoStack: appendUndoSnapshot(state.undoStack, snapshot),
       };
     }
 
@@ -509,11 +553,13 @@ export function formatShareSummaryText(params: {
   rule: DeuceRule;
   durationSeconds: number;
 }): string {
+  const safeA = sanitizeTeamName(params.teamAName, 'Team A');
+  const safeB = sanitizeTeamName(params.teamBName, 'Team B');
   const winnerName =
     params.winner === 'A'
-      ? params.teamAName
+      ? safeA
       : params.winner === 'B'
-      ? params.teamBName
+      ? safeB
       : null;
   const ruleLabel =
     params.rule === 'golden_point' ? 'GOLDEN POINT' : 'VORTEIL';
@@ -522,7 +568,7 @@ export function formatShareSummaryText(params: {
 
   return [
     `PALA MATCH RESULT · ${params.mode} · ${ruleLabel}`,
-    `${params.teamAName} vs. ${params.teamBName}`,
+    `${safeA} vs. ${safeB}`,
     `Ergebnis: ${setsStr}${winnerName ? ` (Sieger: ${winnerName})` : ''}`,
     `Spielzeit: ${durStr}`,
   ].join('\n');

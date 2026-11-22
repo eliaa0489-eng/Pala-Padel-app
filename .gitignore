@@ -1,8 +1,48 @@
+# Dependencies
 node_modules/
+.pnp
+.pnp.js
+
+# Build & Bundle Outputs
 build/
 dist/
+dist-ssr/
+*.local
+.vite/
 coverage/
-.DS_Store
-*.log
-.env*
+
+# Environment & Secrets (NEVER commit real keys or .env files)
+.env
+.env.*
 !.env.example
+*.pem
+*.key
+*.crt
+*.cert
+*.p12
+*.pfx
+secrets.*
+*credentials*.json
+
+# Internal & Editor Directories
+.aistudio/
+.vscode/
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# OS & System Files
+.DS_Store
+Thumbs.db
+
+# Logs & Debug Output
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
