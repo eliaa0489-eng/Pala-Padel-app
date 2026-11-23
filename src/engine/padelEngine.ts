@@ -3,7 +3,7 @@ export type DeuceRule = 'golden_point' | 'advantage';
 export type MatchFormat = 'best_of_3' | 'single_set';
 export type TeamSide = 'A' | 'B';
 
-export const MAX_TEAM_NAME_LENGTH = 26;
+export const MAX_TEAM_NAME_LENGTH = 24;
 export const MAX_UNDO_STACK_SIZE = 400;
 
 export interface SetRecord {
@@ -56,14 +56,23 @@ export type HighStakesIndicator =
   | null;
 
 /**
- * Strips control characters and enforces strict length bounds on player/team names
+ * Strips control characters and HTML/script characters (< > " ' / \ `)
+ * and enforces a strict 24-character maximum on player/team names.
  */
-export function sanitizeTeamName(raw: unknown, fallback = ''): string {
+export function sanitizeTeamName(
+  raw: unknown,
+  fallback = '',
+  trimEdges = false
+): string {
   if (typeof raw !== 'string') return fallback;
-  const cleaned = raw
+  let cleaned = raw
     .replace(/[\u0000-\u001F\u007F-\u009F]/g, '')
-    .slice(0, MAX_TEAM_NAME_LENGTH);
-  return cleaned || fallback;
+    .replace(/[<>"'/\\`]/g, '');
+  if (trimEdges) {
+    cleaned = cleaned.replace(/\s+/g, ' ').trim();
+  }
+  const bounded = cleaned.slice(0, MAX_TEAM_NAME_LENGTH);
+  return bounded || fallback;
 }
 
 function generateSecureMatchId(): string {
@@ -96,8 +105,8 @@ export function createInitialMatchState(params: {
   const server = params.initialServer === 'B' ? 'B' : 'A';
   const defaultA = params.mode === '2v2' ? 'Team A' : 'Spieler 1';
   const defaultB = params.mode === '2v2' ? 'Team B' : 'Spieler 2';
-  const cleanTeamA = sanitizeTeamName(params.teamAName.trim(), defaultA);
-  const cleanTeamB = sanitizeTeamName(params.teamBName.trim(), defaultB);
+  const cleanTeamA = sanitizeTeamName(params.teamAName, defaultA, true);
+  const cleanTeamB = sanitizeTeamName(params.teamBName, defaultB, true);
 
   return {
     matchId: generateSecureMatchId(),
@@ -553,8 +562,8 @@ export function formatShareSummaryText(params: {
   rule: DeuceRule;
   durationSeconds: number;
 }): string {
-  const safeA = sanitizeTeamName(params.teamAName, 'Team A');
-  const safeB = sanitizeTeamName(params.teamBName, 'Team B');
+  const safeA = sanitizeTeamName(params.teamAName, 'Team A', true);
+  const safeB = sanitizeTeamName(params.teamBName, 'Team B', true);
   const winnerName =
     params.winner === 'A'
       ? safeA

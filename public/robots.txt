@@ -1,0 +1,6 @@
+# PALA Robots Configuration
+# Current Mode: Private Beta / Stealth Testing (blocks search engine indexing)
+# For Public Launch: Change "Disallow: /" to "Allow: /" below (and update <meta name="robots"> in index.html).
+
+User-agent: *
+Disallow: /

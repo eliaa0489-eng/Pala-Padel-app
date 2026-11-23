@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   Undo2,
   Maximize2,
@@ -33,6 +33,9 @@ interface LiveScoreboardViewProps {
   onStartNewMatchFlow: () => void;
 }
 
+const SCORE_TAP_COOLDOWN_MS = 85;
+const ACTION_THROTTLE_MS = 320;
+
 export const LiveScoreboardView: React.FC<LiveScoreboardViewProps> = ({
   match,
   onScorePoint,
@@ -45,6 +48,8 @@ export const LiveScoreboardView: React.FC<LiveScoreboardViewProps> = ({
   const [confirmEndOpen, setConfirmEndOpen] = useState(false);
   const [flashTeam, setFlashTeam] = useState<TeamSide | null>(null);
   const [copiedSummary, setCopiedSummary] = useState(false);
+  const lastScoreTapRef = useRef<number>(0);
+  const lastActionRef = useRef<number>(0);
   const [isLandscape, setIsLandscape] = useState<boolean>(() =>
     typeof window !== 'undefined'
       ? window.innerWidth > window.innerHeight && window.innerWidth >= 500
@@ -97,6 +102,10 @@ export const LiveScoreboardView: React.FC<LiveScoreboardViewProps> = ({
 
   const handleTapTeamZone = (team: TeamSide) => {
     if (match.status !== 'active') return;
+    const now = performance.now();
+    if (now - lastScoreTapRef.current < SCORE_TAP_COOLDOWN_MS) return;
+    lastScoreTapRef.current = now;
+
     try {
       if (typeof navigator !== 'undefined' && navigator.vibrate) {
         navigator.vibrate(12);
@@ -111,7 +120,18 @@ export const LiveScoreboardView: React.FC<LiveScoreboardViewProps> = ({
     onScorePoint(team);
   };
 
+  const handleThrottledUndo = () => {
+    const now = performance.now();
+    if (now - lastScoreTapRef.current < SCORE_TAP_COOLDOWN_MS) return;
+    lastScoreTapRef.current = now;
+    onUndo();
+  };
+
   const handleCopyResult = async () => {
+    const now = performance.now();
+    if (now - lastActionRef.current < ACTION_THROTTLE_MS) return;
+    lastActionRef.current = now;
+
     const text = formatShareSummaryText({
       teamAName: match.teamAName,
       teamBName: match.teamBName,
@@ -210,7 +230,7 @@ export const LiveScoreboardView: React.FC<LiveScoreboardViewProps> = ({
         <div className="flex items-center gap-3">
           <button
             type="button"
-            onClick={onUndo}
+            onClick={handleThrottledUndo}
             disabled={!canUndo}
             className={`h-9 px-3 rounded-[7px] border font-mono-pala text-xs inline-flex items-center gap-1.5 transition-all ${
               isDarkSystem

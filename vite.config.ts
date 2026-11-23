@@ -7,15 +7,21 @@ import {defineConfig} from 'vite';
 // PALA Vite configuration for local-first PWA builds
 const RESPONSE_HEADERS = {
   'X-Content-Type-Options': 'nosniff',
-  'Referrer-Policy': 'no-referrer',
+  'Referrer-Policy': 'strict-origin-when-cross-origin',
   'Permissions-Policy':
-    'camera=(), microphone=(), geolocation=(), payment=(), usb=()',
+    'camera=(), microphone=(), geolocation=(), payment=(), usb=(), fullscreen=(self), screen-wake-lock=(self)',
 };
 
-export default defineConfig(() => {
+export default defineConfig(({mode}) => {
   return {
+    // Only expose variables explicitly prefixed with VITE_PUBLIC_
     envPrefix: 'VITE_PUBLIC_',
+    // Strip console.* and debugger statements in production builds
+    esbuild: {
+      drop: mode === 'production' ? ['console', 'debugger'] : [],
+    },
     build: {
+      // Never emit production source maps to browser DevTools
       sourcemap: false,
     },
     plugins: [

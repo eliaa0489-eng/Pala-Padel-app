@@ -16,7 +16,10 @@ const ACTIVE_MATCH_STORAGE_KEY = 'pala_active_match_v1';
 const MATCH_HISTORY_STORAGE_KEY = 'pala_match_history_v1';
 
 const MAX_SETS_COUNT = 5;
-const MAX_HISTORY_LOGS = 200;
+export const MAX_HISTORY_LOGS = 500;
+const MAX_RAW_STORAGE_CHARS = 2_000_000;
+
+const DANGEROUS_KEYS = new Set(['__proto__', 'constructor', 'prototype']);
 
 export interface UserProfile {
   defaultMode: PadelMode;
@@ -51,7 +54,30 @@ export const DEFAULT_USER_PROFILE: UserProfile = {
   playerBName1v1: '',
 };
 
-function sanitizeNonNegativeInt(val: unknown, fallback = 0, max = 1_000_000): number {
+/**
+ * Safe JSON parser that rejects oversized strings and strips __proto__, constructor, and prototype keys
+ */
+export function safeJsonParse<T = unknown>(raw: string | null): T | null {
+  if (!raw || typeof raw !== 'string' || raw.length > MAX_RAW_STORAGE_CHARS) {
+    return null;
+  }
+  try {
+    return JSON.parse(raw, (key, value) => {
+      if (DANGEROUS_KEYS.has(key)) {
+        return undefined;
+      }
+      return value;
+    }) as T;
+  } catch {
+    return null;
+  }
+}
+
+function sanitizeNonNegativeInt(
+  val: unknown,
+  fallback = 0,
+  max = 1_000_000
+): number {
   if (typeof val !== 'number' || !Number.isFinite(val)) return fallback;
   return Math.min(max, Math.max(0, Math.floor(val)));
 }
@@ -107,7 +133,9 @@ function sanitizeSnapshot(raw: unknown): PadelCoreSnapshot | null {
     sideSwitchAlert: Boolean(obj.sideSwitchAlert),
     sideSwitchMessage:
       typeof obj.sideSwitchMessage === 'string'
-        ? obj.sideSwitchMessage.slice(0, 120)
+        ? obj.sideSwitchMessage
+            .replace(/[\u0000-\u001F\u007F-\u009F<>"'/\\`]/g, '')
+            .slice(0, 120)
         : null,
     status: obj.status === 'completed' ? 'completed' : 'active',
     winner: obj.winner === 'A' || obj.winner === 'B' ? obj.winner : null,
@@ -126,8 +154,7 @@ export function loadUserProfile(): UserProfile {
     const raw =
       window.localStorage.getItem(PREFS_STORAGE_KEY) ||
       window.localStorage.getItem(LEGACY_PROFILE_KEY);
-    if (!raw) return DEFAULT_USER_PROFILE;
-    const parsed = JSON.parse(raw);
+    const parsed = safeJsonParse<Record<string, unknown>>(raw);
     if (!parsed || typeof parsed !== 'object') return DEFAULT_USER_PROFILE;
 
     return {
@@ -172,7 +199,7 @@ export function saveUserProfile(profile: UserProfile): void {
     window.localStorage.setItem(PREFS_STORAGE_KEY, serialized);
     window.localStorage.setItem(LEGACY_PROFILE_KEY, serialized);
   } catch {
-    // Ignore storage quota errors
+    // Gracefully ignore QuotaExceededError on iOS Safari
   }
 }
 
@@ -182,12 +209,15 @@ export function saveUserProfile(profile: UserProfile): void {
 export function loadActiveMatch(): PadelMatchState | null {
   try {
     const raw = window.localStorage.getItem(ACTIVE_MATCH_STORAGE_KEY);
-    if (!raw) return null;
-    const parsed = JSON.parse(raw);
+    const parsed = safeJsonParse<Record<string, unknown>>(raw);
     if (!parsed || typeof parsed !== 'object') return null;
 
     const core = sanitizeSnapshot(parsed);
-    if (!core || typeof parsed.matchId !== 'string' || !parsed.matchId.trim()) {
+    if (
+      !core ||
+      typeof parsed.matchId !== 'string' ||
+      !parsed.matchId.trim()
+    ) {
       return null;
     }
 
@@ -206,12 +236,14 @@ export function loadActiveMatch(): PadelMatchState | null {
 
     return {
       ...core,
-      matchId: parsed.matchId.slice(0, 64),
+      matchId: parsed.matchId
+        .replace(/[\u0000-\u001F\u007F-\u009F<>"'/\\`]/g, '')
+        .slice(0, 64),
       mode,
       rule: parsed.rule === 'advantage' ? 'advantage' : 'golden_point',
       format: parsed.format === 'single_set' ? 'single_set' : 'best_of_3',
-      teamAName: sanitizeTeamName(parsed.teamAName?.trim?.(), defaultA),
-      teamBName: sanitizeTeamName(parsed.teamBName?.trim?.(), defaultB),
+      teamAName: sanitizeTeamName(parsed.teamAName, defaultA, true),
+      teamBName: sanitizeTeamName(parsed.teamBName, defaultB, true),
       startedAt:
         typeof parsed.startedAt === 'number' && Number.isFinite(parsed.startedAt)
           ? parsed.startedAt
@@ -224,6 +256,9 @@ export function loadActiveMatch(): PadelMatchState | null {
   }
 }
 
+/**
+ * Saves active match with automatic QuotaExceededError recovery on iOS Safari
+ */
 export function saveActiveMatch(match: PadelMatchState | null): void {
   try {
     if (!match) {
@@ -232,7 +267,21 @@ export function saveActiveMatch(match: PadelMatchState | null): void {
     }
     window.localStorage.setItem(ACTIVE_MATCH_STORAGE_KEY, JSON.stringify(match));
   } catch {
-    // Ignore storage quota errors
+    // If storage quota is exceeded mid-match, trim undoStack to latest 40 snapshots and retry
+    if (match) {
+      try {
+        const compactMatch: PadelMatchState = {
+          ...match,
+          undoStack: match.undoStack.slice(-40),
+        };
+        window.localStorage.setItem(
+          ACTIVE_MATCH_STORAGE_KEY,
+          JSON.stringify(compactMatch)
+        );
+      } catch {
+        // Silent fallback so active in-memory game never crashes
+      }
+    }
   }
 }
 
@@ -242,39 +291,42 @@ export function saveActiveMatch(match: PadelMatchState | null): void {
 export function loadMatchHistory(): CompletedMatchLog[] {
   try {
     const raw = window.localStorage.getItem(MATCH_HISTORY_STORAGE_KEY);
-    if (!raw) return [];
-    const parsed = JSON.parse(raw);
+    const parsed = safeJsonParse<unknown[]>(raw);
     if (!Array.isArray(parsed)) return [];
 
     const logs: CompletedMatchLog[] = [];
     for (const item of parsed.slice(0, MAX_HISTORY_LOGS)) {
-      if (!item || typeof item !== 'object' || typeof item.id !== 'string') {
-        continue;
-      }
-      const sets = sanitizeSetsArray(item.sets);
+      if (!item || typeof item !== 'object') continue;
+      const obj = item as Record<string, unknown>;
+      if (typeof obj.id !== 'string' || !obj.id.trim()) continue;
+      const sets = sanitizeSetsArray(obj.sets);
       if (!sets) continue;
-      const mode: PadelMode = item.mode === '1v1' ? '1v1' : '2v2';
+      const mode: PadelMode = obj.mode === '1v1' ? '1v1' : '2v2';
       logs.push({
-        id: item.id.slice(0, 64),
+        id: obj.id
+          .replace(/[\u0000-\u001F\u007F-\u009F<>"'/\\`]/g, '')
+          .slice(0, 64),
         timestamp:
-          typeof item.timestamp === 'number' && Number.isFinite(item.timestamp)
-            ? item.timestamp
+          typeof obj.timestamp === 'number' && Number.isFinite(obj.timestamp)
+            ? obj.timestamp
             : Date.now(),
         mode,
-        rule: item.rule === 'advantage' ? 'advantage' : 'golden_point',
-        format: item.format === 'single_set' ? 'single_set' : 'best_of_3',
+        rule: obj.rule === 'advantage' ? 'advantage' : 'golden_point',
+        format: obj.format === 'single_set' ? 'single_set' : 'best_of_3',
         teamAName: sanitizeTeamName(
-          item.teamAName,
-          mode === '2v2' ? 'Team A' : 'Spieler 1'
+          obj.teamAName,
+          mode === '2v2' ? 'Team A' : 'Spieler 1',
+          true
         ),
         teamBName: sanitizeTeamName(
-          item.teamBName,
-          mode === '2v2' ? 'Team B' : 'Spieler 2'
+          obj.teamBName,
+          mode === '2v2' ? 'Team B' : 'Spieler 2',
+          true
         ),
         sets,
-        winner: item.winner === 'A' || item.winner === 'B' ? item.winner : null,
+        winner: obj.winner === 'A' || obj.winner === 'B' ? obj.winner : null,
         durationSeconds: sanitizeNonNegativeInt(
-          item.durationSeconds,
+          obj.durationSeconds,
           0,
           86_400
         ),
@@ -287,13 +339,23 @@ export function loadMatchHistory(): CompletedMatchLog[] {
 }
 
 export function saveMatchHistory(logs: CompletedMatchLog[]): void {
+  const capped = logs.slice(0, MAX_HISTORY_LOGS);
   try {
     window.localStorage.setItem(
       MATCH_HISTORY_STORAGE_KEY,
-      JSON.stringify(logs.slice(0, MAX_HISTORY_LOGS))
+      JSON.stringify(capped)
     );
   } catch {
-    // Ignore storage quota errors
+    // Graceful QuotaExceededError fallback: prune oldest half and retry
+    try {
+      const pruned = capped.slice(0, Math.max(10, Math.floor(capped.length / 2)));
+      window.localStorage.setItem(
+        MATCH_HISTORY_STORAGE_KEY,
+        JSON.stringify(pruned)
+      );
+    } catch {
+      // Silent fallback
+    }
   }
 }
 
@@ -307,11 +369,13 @@ export function upsertMatchToHistory(match: PadelMatchState): CompletedMatchLog[
     format: match.format,
     teamAName: sanitizeTeamName(
       match.teamAName,
-      match.mode === '2v2' ? 'Team A' : 'Spieler 1'
+      match.mode === '2v2' ? 'Team A' : 'Spieler 1',
+      true
     ),
     teamBName: sanitizeTeamName(
       match.teamBName,
-      match.mode === '2v2' ? 'Team B' : 'Spieler 2'
+      match.mode === '2v2' ? 'Team B' : 'Spieler 2',
+      true
     ),
     sets: match.sets.filter(
       (s, idx) => s.completed || s.gamesA > 0 || s.gamesB > 0 || idx === 0
@@ -338,4 +402,20 @@ export function removeMatchFromHistory(matchId: string): CompletedMatchLog[] {
   const updated = current.filter((item) => item.id !== matchId);
   saveMatchHistory(updated);
   return updated;
+}
+
+/**
+ * Resets corrupted active match or preference state while preserving valid match history logs if possible
+ */
+export function resetCorruptedStorage(clearAll = false): void {
+  try {
+    window.localStorage.removeItem(ACTIVE_MATCH_STORAGE_KEY);
+    if (clearAll) {
+      window.localStorage.removeItem(PREFS_STORAGE_KEY);
+      window.localStorage.removeItem(LEGACY_PROFILE_KEY);
+      window.localStorage.removeItem(MATCH_HISTORY_STORAGE_KEY);
+    }
+  } catch {
+    // Ignore storage access errors
+  }
 }

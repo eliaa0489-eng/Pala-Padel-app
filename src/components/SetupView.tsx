@@ -9,6 +9,8 @@ import {
   formatSetSummaryString,
   formatDuration,
   formatPointLabel,
+  MAX_TEAM_NAME_LENGTH,
+  sanitizeTeamName,
 } from '../engine/padelEngine';
 import { UserProfile } from '../storage/persistence';
 
@@ -330,25 +332,31 @@ export const SetupView: React.FC<SetupViewProps> = ({
   };
 
   const handleTeamAChange = (val: string) => {
-    setTeamAInput(val);
+    const clean = sanitizeTeamName(val, '');
+    setTeamAInput(clean);
     onUpdateProfile({
       ...profile,
-      teamAName2v2: mode === '2v2' ? val : profile.teamAName2v2,
-      playerAName1v1: mode === '1v1' ? val : profile.playerAName1v1,
+      teamAName2v2: mode === '2v2' ? clean : profile.teamAName2v2,
+      playerAName1v1: mode === '1v1' ? clean : profile.playerAName1v1,
     });
   };
 
   const handleTeamBChange = (val: string) => {
-    setTeamBInput(val);
+    const clean = sanitizeTeamName(val, '');
+    setTeamBInput(clean);
     onUpdateProfile({
       ...profile,
-      teamBName2v2: mode === '2v2' ? val : profile.teamBName2v2,
-      playerBName1v1: mode === '1v1' ? val : profile.playerBName1v1,
+      teamBName2v2: mode === '2v2' ? clean : profile.teamBName2v2,
+      playerBName1v1: mode === '1v1' ? clean : profile.playerBName1v1,
     });
   };
 
+  const [isStarting, setIsStarting] = useState(false);
+
   const handleStart = (e: React.FormEvent) => {
     e.preventDefault();
+    if (isStarting) return;
+    setIsStarting(true);
     const defaultA = mode === '2v2' ? 'Team A' : 'Spieler 1';
     const defaultB = mode === '2v2' ? 'Team B' : 'Spieler 2';
 
@@ -356,8 +364,8 @@ export const SetupView: React.FC<SetupViewProps> = ({
       mode,
       rule,
       format,
-      teamAName: teamAInput.trim() || defaultA,
-      teamBName: teamBInput.trim() || defaultB,
+      teamAName: sanitizeTeamName(teamAInput, defaultA, true),
+      teamBName: sanitizeTeamName(teamBInput, defaultB, true),
       initialServer,
     });
   };
@@ -516,7 +524,7 @@ export const SetupView: React.FC<SetupViewProps> = ({
                     onChange={(e) => handleTeamAChange(e.target.value)}
                     placeholder={mode === '2v2' ? 'Team A' : 'Spieler 1'}
                     aria-label={mode === '2v2' ? 'Name Team A' : 'Name Spieler 1'}
-                    maxLength={26}
+                    maxLength={MAX_TEAM_NAME_LENGTH}
                     className="w-full h-11 pl-3.5 pr-3 rounded-[9px] bg-[#F5F3EE] border border-[#E6E2D8] focus:bg-[#FDFCFA] focus:border-[#004488] focus:outline-none text-sm font-medium text-[#111315] placeholder:text-[#6B6963]"
                   />
                 </div>
@@ -552,7 +560,7 @@ export const SetupView: React.FC<SetupViewProps> = ({
                     onChange={(e) => handleTeamBChange(e.target.value)}
                     placeholder={mode === '2v2' ? 'Team B' : 'Spieler 2'}
                     aria-label={mode === '2v2' ? 'Name Team B' : 'Name Spieler 2'}
-                    maxLength={26}
+                    maxLength={MAX_TEAM_NAME_LENGTH}
                     className="w-full h-11 pl-3.5 pr-3 rounded-[9px] bg-[#F5F3EE] border border-[#E6E2D8] focus:bg-[#FDFCFA] focus:border-[#004488] focus:outline-none text-sm font-medium text-[#111315] placeholder:text-[#6B6963]"
                   />
                 </div>
